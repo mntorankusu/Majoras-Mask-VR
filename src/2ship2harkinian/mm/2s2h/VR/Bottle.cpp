@@ -90,16 +90,17 @@ void UpdateBottle(const mmvr::TrackingFrame& frame, const mmvr::Matrix& model) {
     CollisionPoly* poly = nullptr;
     int bg = BGCHECK_SCENE;
     const auto& s = mmvr::GetSettings();
-    valid = SegmentDistance(mouth, head, head) <= s.Get(mmvr::Setting::AimReach) * 40 &&
+    valid = SegmentDistance(mouth, head, head) <= s.Get(mmvr::Setting::AimReach) * mmvr::WorldUnitsPerMetre() &&
             !BgCheck_EntityLineTest2(&play->colCtx, &head, &mouth, &hit, &poly, true, true, true, true, &bg, &p->actor);
     auto raw =
         mmvr::Multiply(mmvr::PoseMatrix(frame.hands[controller]), mmvr::InversePose(mmvr::PoseMatrix(frame.origin)));
     for (int k = 0; k < 3; ++k)
-        raw.m[3][k] *= 40;
+        raw.m[3][k] *= mmvr::WorldUnitsPerMetre();
     auto point =
         Point(mmvr::Multiply(mmvr::ModelHandCalibration(0, controller, s), raw), opening.x, opening.y, opening.z);
     bottleTime = frame.timeSeconds;
-    if (gesture.Update({ bottleTime, point.x / 40, point.y / 40, point.z / 40 }, frame.epoch, valid,
+    const float units = mmvr::WorldUnitsPerMetre();
+    if (gesture.Update({ bottleTime, point.x / units, point.y / units, point.z / units }, frame.epoch, valid,
                        { s.Get(mmvr::Setting::BottleSpeed), s.Get(mmvr::Setting::BottleDistance), .15f,
                          s.Get(mmvr::Setting::BottleCooldown) })) {
         window.Arm(bottleTime, .4);
@@ -152,7 +153,7 @@ extern "C" int MMVR_TryBottleCatch(PlayState* play, Player* p, Actor* actor) {
         }
         return false;
     }
-    float radius = mmvr::GetSettings().Get(mmvr::Setting::BottleRadius) * 40;
+    float radius = mmvr::GetSettings().Get(mmvr::Setting::BottleRadius) * mmvr::WorldUnitsPerMetre();
     // Use the catchable body's extent, not the actor's feet. Princess offers remain
     // native-script gated; this only broadens a deliberate, unobstructed scoop.
     Vec3f target = actor->world.pos;

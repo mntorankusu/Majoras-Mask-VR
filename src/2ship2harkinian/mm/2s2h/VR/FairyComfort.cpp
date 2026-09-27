@@ -24,7 +24,10 @@ float Distance(PlayState* play, const float* position) {
     const float x = position[0]-eye[0], y = position[1]-eye[1], z = position[2]-eye[2];
     return std::sqrt(x*x+y*y+z*z);
 }
-constexpr float Foot = .3048f * 40.f; // Same game units per metre as tracked hands/head.
+// One foot in game units, at the same units-per-metre as tracked hands/head.
+inline float FootInUnits() {
+    return .3048f * mmvr::WorldUnitsPerMetre();
+}
 }
 extern "C" int MMVR_FairyReplacedByCutscene(PlayState* play, Actor* actor) {
     if (!play || !actor || actor->id != ACTOR_EN_ELF || !GET_PLAYER(play) ||
@@ -39,7 +42,7 @@ extern "C" int MMVR_FairyReplacedByCutscene(PlayState* play, Actor* actor) {
 }
 extern "C" float MMVR_FairyOpacity(PlayState* play, Actor* actor) {
     if (!Companion(play, actor)) return 1.f;
-    float fade = std::clamp((Distance(play, &actor->world.pos.x)-Foot)/Foot, 0.f, 1.f);
+    float fade = std::clamp((Distance(play, &actor->world.pos.x)-FootInUnits())/FootInUnits(), 0.f, 1.f);
     fade = fade*fade*(3.f-2.f*fade);
     return .5f + .5f*fade;
 }
@@ -48,8 +51,8 @@ extern "C" int MMVR_FairyTrailHidden(PlayState* play, const float* position) {
     // Include the visible sparkle footprint, rather than testing its centre only.
     auto* player = play ? GET_PLAYER(play) : nullptr;
     if (player && MMVR_ControlledKafei(player)) return true;
-    if (Distance(play, position) <= 2.f*Foot) return true;
-    return player && player->tatlActor && Distance(play, &player->tatlActor->world.pos.x) <= 2.f*Foot;
+    if (Distance(play, position) <= 2.f*FootInUnits()) return true;
+    return player && player->tatlActor && Distance(play, &player->tatlActor->world.pos.x) <= 2.f*FootInUnits();
 }
 extern "C" void MMVR_FairyTrailBegin(PlayState* play, Actor* actor) {
     auto* player = play ? GET_PLAYER(play) : nullptr;

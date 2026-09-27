@@ -272,7 +272,7 @@ void UpdateShield(const mmvr::TrackingFrame& frame, const mmvr::Matrix& rightHan
     Vec3f start{ head.x, head.y, head.z }, end{ rightHand.m[3][0], rightHand.m[3][1], rightHand.m[3][2] }, hit;
     float reach = std::sqrt((end.x - head.x) * (end.x - head.x) + (end.y - head.y) * (end.y - head.y) +
                             (end.z - head.z) * (end.z - head.z)) /
-                  40;
+                  mmvr::WorldUnitsPerMetre();
     CollisionPoly* poly = nullptr;
     int bg = BGCHECK_SCENE;
     if (reach > mmvr::GetSettings().Get(mmvr::Setting::AimReach) ||
@@ -448,7 +448,7 @@ void UpdateSwordDiagnostics(const mmvr::TrackingFrame& frame, mmvr::Matrix& left
     auto raw =
         mmvr::Multiply(mmvr::PoseMatrix(frame.hands[controller]), mmvr::InversePose(mmvr::PoseMatrix(frame.origin)));
     for (int c = 0; c < 3; ++c)
-        raw.m[3][c] *= 40;
+        raw.m[3][c] *= mmvr::WorldUnitsPerMetre();
     auto rawTip =
         bladePoint(mmvr::Multiply(mmvr::ModelHandCalibration(0, controller, mmvr::GetSettings()), raw), length);
     auto& settings = mmvr::GetSettings();
@@ -458,7 +458,7 @@ void UpdateSwordDiagnostics(const mmvr::TrackingFrame& frame, mmvr::Matrix& left
     d.active = true;
     d.reach = std::sqrt((base.x - head.x) * (base.x - head.x) + (base.y - head.y) * (base.y - head.y) +
                         (base.z - head.z) * (base.z - head.z)) /
-              40;
+              mmvr::WorldUnitsPerMetre();
     auto line = [&](Vec3f a, Vec3f b) {
         CollisionPoly* poly = nullptr;
         int bg = BGCHECK_SCENE;
@@ -480,11 +480,11 @@ void UpdateSwordDiagnostics(const mmvr::TrackingFrame& frame, mmvr::Matrix& left
     if (!rawBladeValid || frame.timeSeconds != lastRawBlade.time) {
         auto dt = frame.timeSeconds - lastRawBlade.time;
         bladeStepSpeed = rawBladeValid && dt > 0 && dt < .15
-                             ? std::sqrt(SQ(rawTip.x / 40 - lastRawBlade.x) + SQ(rawTip.y / 40 - lastRawBlade.y) +
-                                         SQ(rawTip.z / 40 - lastRawBlade.z)) /
+                             ? std::sqrt(SQ(rawTip.x / mmvr::WorldUnitsPerMetre() - lastRawBlade.x) + SQ(rawTip.y / mmvr::WorldUnitsPerMetre() - lastRawBlade.y) +
+                                         SQ(rawTip.z / mmvr::WorldUnitsPerMetre() - lastRawBlade.z)) /
                                    float(dt)
                              : 0;
-        lastRawBlade = { frame.timeSeconds, rawTip.x / 40, rawTip.y / 40, rawTip.z / 40 };
+        lastRawBlade = { frame.timeSeconds, rawTip.x / mmvr::WorldUnitsPerMetre(), rawTip.y / mmvr::WorldUnitsPerMetre(), rawTip.z / mmvr::WorldUnitsPerMetre() };
         rawBladeValid = true;
     }
     // Charged turns and physical spins use the same swept blade as ordinary strikes.
@@ -495,7 +495,7 @@ void UpdateSwordDiagnostics(const mmvr::TrackingFrame& frame, mmvr::Matrix& left
                 settings.Get(mmvr::Setting::TriggerSpinTurn) > .5f, settings.Get(mmvr::Setting::SpinChargeTime));
     if (spinAngularSpeed > 0 && rawReach >= .25f)
         bladeStepSpeed = std::max(bladeStepSpeed, spinAngularSpeed * rawReach);
-    bool swung = swordGate.Update({frame.timeSeconds,raw.m[3][0]/40,raw.m[3][1]/40,raw.m[3][2]/40},
+    bool swung = swordGate.Update({frame.timeSeconds,raw.m[3][0]/mmvr::WorldUnitsPerMetre(),raw.m[3][1]/mmvr::WorldUnitsPerMetre(),raw.m[3][2]/mmvr::WorldUnitsPerMetre()},
                                   frame.epoch,!d.blocked,tune);
     d.speed = swordGate.speed;
     d.swings = swordGate.serial;
@@ -545,7 +545,7 @@ void UpdateSwordDiagnostics(const mmvr::TrackingFrame& frame, mmvr::Matrix& left
     previousTip = tip;
     previousBlade = true;
     if (settings.Get(mmvr::Setting::SwordWallBlocking) > .5f)
-        leftHand = swordContact.Resolve(leftHand, d.blocked, settings.Get(mmvr::Setting::WeaponWallOffset) * 40);
+        leftHand = swordContact.Resolve(leftHand, d.blocked, settings.Get(mmvr::Setting::WeaponWallOffset) * mmvr::WorldUnitsPerMetre());
     else
         swordContact.Reset();
 }
@@ -568,7 +568,7 @@ void QueuePhysicalCombat(PlayState* play, Player* p) {
     float sx = std::sqrt(SQ(shieldPose.m[0][0]) + SQ(shieldPose.m[0][1]) + SQ(shieldPose.m[0][2]));
     int vertical = p->transformation == PLAYER_FORM_ZORA ? 2 : 1;
     float sy = std::sqrt(SQ(shieldPose.m[vertical][0]) + SQ(shieldPose.m[vertical][1]) + SQ(shieldPose.m[vertical][2]));
-    float margin = mmvr::GetSettings().Get(mmvr::Setting::ShieldMargin) * 40;
+    float margin = mmvr::GetSettings().Get(mmvr::Setting::ShieldMargin) * mmvr::WorldUnitsPerMetre();
     for (int i = 0; i < 4; ++i) {
         expanded[i * 3] = mesh[i * 3] + (i & 1 ? 1.f : -1.f) * margin / std::max(sx, .0001f);
         expanded[i * 3 + 1] = mesh[i * 3 + 1];
@@ -986,7 +986,7 @@ extern "C" int MMVR_ShieldBeamHit(PlayState* play, const float* start, const flo
     int vertical = 1;
     float sy = std::sqrt(SQ(shieldPose.m[vertical][0]) + SQ(shieldPose.m[vertical][1]) + SQ(shieldPose.m[vertical][2]));
     float dx = std::max({ -1463.f - x, 0.f, x - 1119.f }) * sx, dy = std::max({ -1086.f - y, 0.f, y - 1187.f }) * sy;
-    if (std::hypot(dx, dy) > radius + mmvr::GetSettings().Get(mmvr::Setting::ShieldMargin) * 40)
+    if (std::hypot(dx, dy) > radius + mmvr::GetSettings().Get(mmvr::Setting::ShieldMargin) * mmvr::WorldUnitsPerMetre())
         return -1;
     Vec3f from{ start[0], start[1], start[2] }, contact{};
     for (int k = 0; k < 3; ++k)

@@ -213,11 +213,12 @@ mmvr::Matrix HeldMaskPose(const mmvr::TrackingFrame& frame, const mmvr::Matrix& 
     auto aim = mmvr::Multiply(mmvr::PoseMatrix(frame.aims[hand]), mmvr::InversePose(mmvr::PoseMatrix(frame.origin)));
     // Get-item masks face +Z; the outer face points along the controller aim (-Z).
     auto pose = mmvr::Multiply(mmvr::YawPose(3.141592654f), aim);
-    pose.m[3][0] = (grip.m[3][0] - head.m[3][0]) * 40;
-    pose.m[3][1] = grip.m[3][1] * 40;
-    pose.m[3][2] = (grip.m[3][2] - head.m[3][2]) * 40;
+    const float units = mmvr::WorldUnitsPerMetre();
+    pose.m[3][0] = (grip.m[3][0] - head.m[3][0]) * units;
+    pose.m[3][1] = grip.m[3][1] * units;
+    pose.m[3][2] = (grip.m[3][2] - head.m[3][2]) * units;
     pose = mmvr::Multiply(pose, view);
-    float scale = 40 * mmvr::GetSettings().Get(mmvr::Setting::MaskSize) / mask->height;
+    float scale = mmvr::WorldUnitsPerMetre() * mmvr::GetSettings().Get(mmvr::Setting::MaskSize) / mask->height;
     for (int row = 0; row < 3; ++row)
         for (int col = 0; col < 3; ++col)
             pose.m[row][col] *= scale;

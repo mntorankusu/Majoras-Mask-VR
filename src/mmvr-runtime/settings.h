@@ -179,6 +179,9 @@ enum class Setting {
     FairyNearComfort,
     PhysicalRunBoost,
     ExperimentalFirstPersonMotion,
+    FloorPinnedWorldScale,
+    FloorHeightOffset,
+    PlayerHeight,
     Count
 };
 struct SettingDefinition {
@@ -361,6 +364,9 @@ inline constexpr SettingDefinition SettingDefinitions[] = {
     { "gVR.FairyNearComfort", "Near-head fairy comfort", 1, 0, 1, 1, "off/on" },
     { "gVR.PhysicalRunBoost", "Physical run speed boost", 20, 0, 100, 5, "%" },
     { "gVR.ExperimentalFirstPersonMotion", "Experimental First-Person Motion", 0, 0, 1, 1, "off/on" },
+    { "gVR.FloorPinnedWorldScale", "Floor-pinned world scale", 0, 0, 1, 1, "off/on" },
+    { "gVR.FloorHeightOffset", "Floor height offset", 0, -40, 40, 1, "units" },
+    { "gVR.PlayerHeight", "Player height", 1.7f, 1.f, 2.3f, .01f, "m" },
 };
 static_assert(sizeof(SettingDefinitions) / sizeof(SettingDefinitions[0]) == size_t(Setting::Count));
 inline float BoundSetting(Setting id, float value) {
@@ -414,4 +420,21 @@ template <class T> inline T MenuAdjustInput(T left, T right) {
     return right;
 }
 Settings& GetSettings() noexcept;
+// Per-frame world scale for the floor-pinned mode (1 when the option is off).
+// Shared here so tracking helpers and game code use one value.
+inline float& ActiveWorldScaleStorage() {
+    static float scale = 1.f;
+    return scale;
+}
+inline float ActiveWorldScale() {
+    const float s = ActiveWorldScaleStorage();
+    return std::isfinite(s) && s > 0.01f ? s : 1.f;
+}
+inline void SetActiveWorldScale(float s) {
+    ActiveWorldScaleStorage() = std::isfinite(s) && s > 0.01f ? s : 1.f;
+}
+// Game units per physical metre (40 when the option is off).
+inline float WorldUnitsPerMetre() {
+    return 40.f * ActiveWorldScale();
+}
 } // namespace mmvr

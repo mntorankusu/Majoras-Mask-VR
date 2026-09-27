@@ -20,10 +20,11 @@ void RecordBodyTracking(const mmvr::TrackingFrame& f,const mmvr::Matrix& view,co
  bodyRenderAlpha=std::clamp(f.visualAlpha,0.f,1.f);
  auto* play=gPlayState;auto* p=play?GET_PLAYER(play):nullptr;trackedBodyReady=p&&mmvr::FirstPersonRequested()&&FirstPersonFormAllowed(p)&&mmvr::InputFocused();
  if(!trackedBodyReady)return;trackedBodyOwner=p;trackedBodyScene=play->sceneId;trackedBodyAt=std::chrono::steady_clock::now();
- trackedHead={view.m[3][0],view.m[3][1]+head.m[3][1]*40,view.m[3][2]};
+ trackedHead={view.m[3][0],view.m[3][1]+head.m[3][1]*mmvr::WorldUnitsPerMetre(),view.m[3][2]};
  auto inverse=mmvr::InversePose(mmvr::PoseMatrix(f.origin));
  for(int h=0;h<2;++h){trackedHandReady[h]=f.handValid[h]&&f.handTracked[h];auto m=mmvr::Multiply(mmvr::PoseMatrix(f.hands[h]),inverse);
-  m.m[3][0]=(m.m[3][0]-head.m[3][0])*40;m.m[3][1]*=40;m.m[3][2]=(m.m[3][2]-head.m[3][2])*40;m=mmvr::Multiply(m,view);
+  const float units=mmvr::WorldUnitsPerMetre();
+  m.m[3][0]=(m.m[3][0]-head.m[3][0])*units;m.m[3][1]*=units;m.m[3][2]=(m.m[3][2]-head.m[3][2])*units;m=mmvr::Multiply(m,view);
   trackedPalms[h]={m.m[3][0],m.m[3][1],m.m[3][2]};
  }
  if(trackedBodyQueued)RefreshBodyGeometry(p);

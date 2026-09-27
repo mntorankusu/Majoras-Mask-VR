@@ -19,7 +19,6 @@ void MMVR_PlayerEndTriggerClimb(PlayState*, Player*);
 void MMVR_PlayerBeginTriggerClimb(PlayState*, Player*, CollisionPoly*, s32);
 }
 namespace {
-constexpr float Units = 40;
 mmvr::ClimbPull hands[2];
 struct Contact {
     Vec3f point{};
@@ -153,7 +152,7 @@ std::array<float, 3> ResolveClimbDisplacement(PlayState* play, Player* p, std::a
     if (!ClimbingContext(play))
         return {};
     float length = std::sqrt(step[0] * step[0] + step[1] * step[1] + step[2] * step[2]);
-    if (!std::isfinite(length) || length > Units * .25f)
+    if (!std::isfinite(length) || length > mmvr::WorldUnitsPerMetre() * .25f)
         return {};
     auto* wall = p->actor.wallPoly;
     float nx = COLPOLY_GET_NORMAL(wall->normal.x), nz = COLPOLY_GET_NORMAL(wall->normal.z), n2 = nx * nx + nz * nz;
@@ -243,12 +242,12 @@ static int ApproachClimb(PlayState* play, const mmvr::TrackingFrame& frame, cons
         local.m[3][0] -= relativeHead.m[3][0];
         local.m[3][2] -= relativeHead.m[3][2];
         for (int k = 0; k < 3; ++k)
-            local.m[3][k] *= Units;
+            local.m[3][k] *= mmvr::WorldUnitsPerMetre();
         auto world = mmvr::Multiply(local, view);
         Vec3f center{ world.m[3][0], world.m[3][1], world.m[3][2] };
         if (!std::isfinite(center.x) || !std::isfinite(center.y) || !std::isfinite(center.z))
             continue;
-        const float reach = mmvr::GetSettings().Get(mmvr::Setting::ClimbGrabDistance) * Units + 4;
+        const float reach = mmvr::GetSettings().Get(mmvr::Setting::ClimbGrabDistance) * mmvr::WorldUnitsPerMetre() + 4;
         CollisionPoly* best = nullptr;
         int bestBg = BGCHECK_SCENE;
         float nearest = reach * reach + 1;
@@ -277,11 +276,11 @@ static int ApproachClimb(PlayState* play, const mmvr::TrackingFrame& frame, cons
         float signedDistance = (before.x - contact.x) * nx + (before.z - contact.z) * nz;
         const float radius = std::max(6.f, float(p->cylinder.dim.radius));
         float clearance = std::max({ radius + 2, p->ageProperties->unk_3C + 4, signedDistance });
-        if (signedDistance < 0 || signedDistance > Units * 1.5f + reach)
+        if (signedDistance < 0 || signedDistance > mmvr::WorldUnitsPerMetre() * 1.5f + reach)
             continue;
         Vec3f next{ before.x + nx * (clearance - signedDistance), before.y,
                     before.z + nz * (clearance - signedDistance) };
-        if (std::hypot(next.x - before.x, next.z - before.z) > Units * .75f + reach)
+        if (std::hypot(next.x - before.x, next.z - before.z) > mmvr::WorldUnitsPerMetre() * .75f + reach)
             continue;
         // The torso must reach the same wall without crossing another wall or ceiling.
         Vec3f a{ next.x, next.y + 26.8f, next.z },
@@ -376,10 +375,10 @@ void UpdateClimbing(const mmvr::TrackingFrame& frame, const mmvr::Matrix& view, 
         mmvr::MotionPoint raw{ frame.timeSeconds, local.m[3][0] - relativeHead.m[3][0], local.m[3][1],
                                local.m[3][2] - relativeHead.m[3][2] };
         for (int k = 0; k < 3; ++k)
-            local.m[3][k] = (k == 0 ? raw.x : k == 1 ? raw.y : raw.z) * Units;
+            local.m[3][k] = (k == 0 ? raw.x : k == 1 ? raw.y : raw.z) * mmvr::WorldUnitsPerMetre();
         auto world = mmvr::Multiply(local, view);
         float distance =
-            mmvr::GetSettings().Get(mmvr::Setting::ClimbGrabDistance) * Units + 4.f; // Grip-to-fingertip tolerance.
+            mmvr::GetSettings().Get(mmvr::Setting::ClimbGrabDistance) * mmvr::WorldUnitsPerMetre() + 4.f; // Grip-to-fingertip tolerance.
         float nx = COLPOLY_GET_NORMAL(p->actor.wallPoly->normal.x),
               nz = COLPOLY_GET_NORMAL(p->actor.wallPoly->normal.z);
         Vec3f a{ world.m[3][0] + nx * distance, world.m[3][1], world.m[3][2] + nz * distance },
@@ -464,7 +463,7 @@ void UpdateClimbing(const mmvr::TrackingFrame& frame, const mmvr::Matrix& view, 
                                     s.Get(mmvr::Setting::ClimbDeadzone));
     std::array<float, 3> worldStep{};
     for (int k = 0; k < 3; ++k)
-        worldStep[k] = Units * (step[0] * view.m[0][k] + step[1] * view.m[1][k] + step[2] * view.m[2][k]);
+        worldStep[k] = mmvr::WorldUnitsPerMetre() * (step[0] * view.m[0][k] + step[1] * view.m[1][k] + step[2] * view.m[2][k]);
     if (std::abs(worldStep[1]) > .00001f) {
         verticalIntent = worldStep[1] > 0 ? 1 : -1;
         movedAt = std::chrono::steady_clock::now();

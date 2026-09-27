@@ -63,6 +63,33 @@ struct HeadCalibration {
 constexpr float StandingEyeAnchor[PLAYER_FORM_MAX] = {83.f, 59.f, 60.f, 24.f, 38.f};
 HeadCalibration formHeads[PLAYER_FORM_MAX];
 Player* headOwner = nullptr;
+// Shared eye computation. With applyCompact, Goron shielding/curling uses its
+// stable lowered anchor; without it the standing skeleton height is returned
+// so world scale never reacts to a defensive crouch.
+float EyeHeightForPosture(Player* p, const mmvr::FormProfile* profile, bool applyCompact) {
+    // Use the settled six-frame idle calibration whenever available. Before it
+    // completes, start from the measured standing model anchor so calibration
+    // cannot move the camera when a newly spawned player first becomes idle.
+    // Ordinary animation bob remains opt-in. Intentional defensive postures
+    // have their own stable eye anchor, independent of that comfort option.
+    float model = p == headOwner ? formHeads[p->transformation].height : 0.f;
+    if (!(model >= 15.f && model <= 160.f))
+        model = StandingEyeAnchor[p->transformation];
+    const bool compactPosture = applyCompact && p->transformation == PLAYER_FORM_GORON &&
+        ((p->stateFlags3 & PLAYER_STATE3_1000) || (p->stateFlags1 & PLAYER_STATE1_400000));
+    if (!compactPosture && mmvr::GetSettings().Get(mmvr::Setting::ExperimentalFirstPersonMotion) > .5f) {
+        const float focusHeight = p->actor.focus.pos.y - p->actor.world.pos.y;
+        if (std::isfinite(focusHeight) && focusHeight >= 15.f && focusHeight <= 160.f)
+            model = focusHeight;
+    }
+    float eye = mmvr::AdjustedEyeHeight(mmvr::GetSettings(), profile->eyeHeight, model);
+    // Match the compact defensive silhouettes without sampling animated focus
+    // points. Camera.cpp eases entry/exit at display cadence; calibration stays
+    // standing-only, so these offsets cannot become the next standing height.
+    if (compactPosture)
+        eye = std::max(4.f, eye - (StandingEyeAnchor[PLAYER_FORM_GORON] - 24.f));
+    return eye;
+}
 } // namespace
 void RecordFormEyeHeight(Player* p) {
     if (!p || p->transformation >= PLAYER_FORM_MAX)
@@ -102,29 +129,29 @@ float FormEyeHeight(Player* p) {
     auto* profile = mmvr::ProfileForForm(p->transformation);
     if (!profile)
         return 52.f;
-    // Use the settled six-frame idle calibration whenever available. Before it
-    // completes, start from the measured standing model anchor so calibration
-    // cannot move the camera when a newly spawned player first becomes idle.
-    // Ordinary animation bob remains opt-in. Intentional defensive postures
-    // have their own stable eye anchor, independent of that comfort option.
-    float model = p == headOwner ? formHeads[p->transformation].height : 0.f;
-    if (!(model >= 15.f && model <= 160.f))
-        model = StandingEyeAnchor[p->transformation];
-    const bool compactPosture = p->transformation == PLAYER_FORM_GORON &&
-        ((p->stateFlags3 & PLAYER_STATE3_1000) || (p->stateFlags1 & PLAYER_STATE1_400000));
-    if (!compactPosture && mmvr::GetSettings().Get(mmvr::Setting::ExperimentalFirstPersonMotion) > .5f) {
-        const float focusHeight = p->actor.focus.pos.y - p->actor.world.pos.y;
-        if (std::isfinite(focusHeight) && focusHeight >= 15.f && focusHeight <= 160.f)
-            model = focusHeight;
-    }
-    float eye = mmvr::AdjustedEyeHeight(mmvr::GetSettings(), profile->eyeHeight, model);
-    // Match the compact defensive silhouettes without sampling animated focus
-    // points. Camera.cpp eases entry/exit at display cadence; calibration stays
-    // standing-only, so these offsets cannot become the next standing height.
-    if (p->transformation == PLAYER_FORM_GORON &&
-        ((p->stateFlags3 & PLAYER_STATE3_1000) || (p->stateFlags1 & PLAYER_STATE1_400000)))
-        eye = std::max(4.f, eye - (StandingEyeAnchor[PLAYER_FORM_GORON] - 24.f));
-    return eye;
+    return EyeHeightForPosture(p, profile, true);
+}
+// Standing eye without the defensive-crouch anchor. World scale derives from
+// the skeleton size, so shielding/curling as Goron keeps its lowered view
+// without growing the world.
+float FormStandingEyeHeight(Player* p) {
+    if (!p)
+        return 52.f;
+    auto* profile = mmvr::ProfileForForm(p->transformation);
+    if (!profile)
+        return 52.f;
+    return EyeHeightForPosture(p, profile, false);
+}
+// Target world scale for the floor-pinned mode (1 when the option is off).
+// Scale is chosen so the scaled floor-to-eye distance matches the configured
+// Player Height: scale = formEye / (40 * heightMetres).
+float FloorPinnedWorldScaleTarget(Player* p, float formEye) {
+    if (!p || !mmvr::FloorPinnedWorldScaleActive(mmvr::GetSettings()) || GiantTransformationActive(p))
+        return 1.f;
+    const float heightMetres = mmvr::GetSettings().Get(mmvr::Setting::PlayerHeight);
+    if (!(heightMetres > 0.2f))
+        return 1.f;
+    return mmvr::WorldScaleForEyes(formEye, 40.f * heightMetres);
 }
 bool NativeAbilityOwnsFacing(Player* p) {
     return p->actionFunc == Player_Action_45 || p->actionFunc == Player_Action_46 ||

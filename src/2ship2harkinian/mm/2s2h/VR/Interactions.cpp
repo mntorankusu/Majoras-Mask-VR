@@ -41,7 +41,7 @@ extern "C" int MMVR_ButtonInteractionVisible(PlayState* play,Actor* actor) {
     const auto visible=[&](const Vec3f& target) {
         float p[3]{};
         for(int i=0;i<3;++i) p[i]=(target.x*inverse.m[0][i]+target.y*inverse.m[1][i]+
-                                 target.z*inverse.m[2][i]+inverse.m[3][i])/40.f;
+                                 target.z*inverse.m[2][i]+inverse.m[3][i])/mmvr::WorldUnitsPerMetre();
         return mmvr::InteractionPointVisible(p[0],p[1],p[2]);
     };
     Vec3f middle=actor->world.pos;
@@ -186,14 +186,14 @@ bool ReleaseThrowable(PlayState* play, Player* p, const ThrowSample& sample, boo
         float horizontal = std::hypot(releaseVelocity[0], releaseVelocity[2]);
         releaseVelocity[1] =
             std::max(releaseVelocity[1],
-                     std::max(tuning.Get(mmvr::Setting::BombArcLift) * 40.f,
+                     std::max(tuning.Get(mmvr::Setting::BombArcLift) * mmvr::WorldUnitsPerMetre(),
                               horizontal * std::tan(tuning.Get(mmvr::Setting::BombArcAngle) * .01745329252f)));
-        releaseVelocity = mmvr::BoundedVelocity(releaseVelocity, 1, tuning.Get(mmvr::Setting::ThrowMaxSpeed) * 40.f);
+        releaseVelocity = mmvr::BoundedVelocity(releaseVelocity, 1, tuning.Get(mmvr::Setting::ThrowMaxSpeed) * mmvr::WorldUnitsPerMetre());
     }
     const bool prop = CarriedObject(p) || (HeldBomb(p) && reinterpret_cast<EnBom*>(physicalRelease)->isPowderKeg);
     if (prop)
         physicalRelease->gravity =
-            -9.81f * 40.f * tuning.Get(mmvr::Setting::PropGravity) / (30.f * (60.f / std::max(1, int(R_UPDATE_RATE))));
+            -9.81f * mmvr::WorldUnitsPerMetre() * tuning.Get(mmvr::Setting::PropGravity) / (30.f * (60.f / std::max(1, int(R_UPDATE_RATE))));
     physicalRelease->bgCheckFlags = 0;
     physicalRelease->colChkInfo.displacement = {};
     physicalRelease->world.pos = { sample.pose.m[3][0], sample.pose.m[3][1], sample.pose.m[3][2] };
@@ -315,9 +315,10 @@ void RecordTracking(const mmvr::TrackingFrame& frame, const mmvr::Matrix& view, 
     itemAction = player->heldItemAction;
     auto local =
         mmvr::Multiply(mmvr::PoseMatrix(frame.aims[itemHand]), mmvr::InversePose(mmvr::PoseMatrix(frame.origin)));
-    local.m[3][0] = (local.m[3][0] - relativeHead.m[3][0]) * 40;
-    local.m[3][1] *= 40;
-    local.m[3][2] = (local.m[3][2] - relativeHead.m[3][2]) * 40;
+    const float units = mmvr::WorldUnitsPerMetre();
+    local.m[3][0] = (local.m[3][0] - relativeHead.m[3][0]) * units;
+    local.m[3][1] *= units;
+    local.m[3][2] = (local.m[3][2] - relativeHead.m[3][2]) * units;
     aim = mmvr::Multiply(local, view);
     auto hand =
         mmvr::Multiply(mmvr::PoseMatrix(frame.hands[itemHand]), mmvr::InversePose(mmvr::PoseMatrix(frame.origin)));
@@ -326,25 +327,25 @@ void RecordTracking(const mmvr::TrackingFrame& frame, const mmvr::Matrix& view, 
     auto inverseOrigin = mmvr::InversePose(mmvr::PoseMatrix(frame.origin));
     for (int col = 0; col < 3; ++col)
         for (int row = 0; row < 3; ++row)
-            gripVelocity[col] += (&frame.handVelocity[itemHand].x)[row] * inverseOrigin.m[row][col] * 40;
+            gripVelocity[col] += (&frame.handVelocity[itemHand].x)[row] * inverseOrigin.m[row][col] * units;
     for (float component : gripVelocity)
         runtimeVelocity &= std::isfinite(component);
-    motion.Push({ frame.timeSeconds, hand.m[3][0] * 40, hand.m[3][1] * 40, hand.m[3][2] * 40 }, frame.epoch);
+    motion.Push({ frame.timeSeconds, hand.m[3][0] * units, hand.m[3][1] * units, hand.m[3][2] * units }, frame.epoch);
     trackingBasis = view;
-    hand.m[3][0] = (hand.m[3][0] - relativeHead.m[3][0]) * 40;
-    hand.m[3][1] *= 40;
-    hand.m[3][2] = (hand.m[3][2] - relativeHead.m[3][2]) * 40;
+    hand.m[3][0] = (hand.m[3][0] - relativeHead.m[3][0]) * units;
+    hand.m[3][1] *= units;
+    hand.m[3][2] = (hand.m[3][2] - relativeHead.m[3][2]) * units;
     grip = mmvr::Multiply(hand, view);
-    head = { view.m[3][0], view.m[3][1] + relativeHead.m[3][1] * 40, view.m[3][2] };
+    head = { view.m[3][0], view.m[3][1] + relativeHead.m[3][1] * units, view.m[3][2] };
     if (mmvr::MenuPaused() || play->pauseCtx.state != PAUSE_STATE_OFF || !mmvr::InputFocused())
         motion.Reset();
     for (int h = 0; h < 2; ++h) {
         handTracked[h] = frame.handTracked[h] && frame.aimValid[h];
         auto world = [&](const XrPosef& pose) {
             auto m = mmvr::Multiply(mmvr::PoseMatrix(pose), inverseOrigin);
-            m.m[3][0] = (m.m[3][0] - relativeHead.m[3][0]) * 40;
-            m.m[3][1] *= 40;
-            m.m[3][2] = (m.m[3][2] - relativeHead.m[3][2]) * 40;
+            m.m[3][0] = (m.m[3][0] - relativeHead.m[3][0]) * units;
+            m.m[3][1] *= units;
+            m.m[3][2] = (m.m[3][2] - relativeHead.m[3][2]) * units;
             return mmvr::Multiply(m, view);
         };
         handAim[h] = world(frame.aims[h]);
@@ -356,13 +357,13 @@ void RecordTracking(const mmvr::TrackingFrame& frame, const mmvr::Matrix& view, 
         handVelocity[h] = {};
         for (int c = 0; c < 3; ++c)
             for (int row = 0; row < 3; ++row)
-                handVelocity[h][c] += (&frame.handVelocity[h].x)[row] * inverseOrigin.m[row][c] * 40;
+                handVelocity[h][c] += (&frame.handVelocity[h].x)[row] * inverseOrigin.m[row][c] * units;
         for (float component : handVelocity[h])
             handHasVelocity[h] &= std::isfinite(component);
         auto localGrip = mmvr::Multiply(mmvr::PoseMatrix(frame.hands[h]), inverseOrigin);
         if (handTracked[h])
             handMotion[h].Push(
-                { frame.timeSeconds, localGrip.m[3][0] * 40, localGrip.m[3][1] * 40, localGrip.m[3][2] * 40 },
+                { frame.timeSeconds, localGrip.m[3][0] * units, localGrip.m[3][1] * units, localGrip.m[3][2] * units },
                 frame.epoch);
         else
             handMotion[h].Reset();

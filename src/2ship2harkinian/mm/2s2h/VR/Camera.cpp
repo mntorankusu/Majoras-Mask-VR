@@ -73,6 +73,10 @@ bool stateTrackingPending = false, stateCameraRebased = false;
 #endif
 bool active = false, haveDraw = false;
 float baseYaw = 0, heading = 0, height = 44.f, headLocalX = 0, headLocalZ = 0;
+// Floor-pinned world-scale mode: the camera rides the character eye while the
+// scale compensates, holding perceived floor depth eye/(40*scale) steady.
+// viewPose uses the smoothed character eye; projection/hands use worldScale.
+float worldScale = 1.f;
 std::chrono::steady_clock::time_point environmentSampled;
 float cinematicTurn = 0;
 bool wasCinematic = false;
@@ -138,6 +142,8 @@ void ResetCameraHistory(bool releaseActions, bool preserveActions = false) {
     flowerTime = heightTime = 0;
     flowerGroundHeld = rideSmoothing = false;
     formCameraSettling = 0;
+    worldScale = 1.f;
+    mmvr::SetActiveWorldScale(1.f);
     formReloadOwner = nullptr;
     formReloadScene = -1;
     ResetViewToolHistory();
@@ -193,8 +199,10 @@ mmvr::CameraFrame Update(const mmvr::TrackingFrame& tracking) {
 #endif
     mmvrgame::UpdateArmRun(tracking);
     const bool giantTransition = mmvrgame::GiantTransformationActive(p);
-    if (!giantTransition && mmvrgame::ViewToolCamera(tracking, result))
+    if (!giantTransition && mmvrgame::ViewToolCamera(tracking, result)) {
+        mmvr::SetActiveWorldScale(result.worldScale > 0.01f ? result.worldScale : 1.f);
         return result;
+    }
     const auto facts = mmvrgame::SceneFacts(play);
     if (MMVR_FormReloadActive(play) && !DrawReady(play, p) && lastViewPose.m[3][3] &&
         mmvr::FirstPersonRequested() && !giantTransition) {
@@ -205,6 +213,7 @@ mmvr::CameraFrame Update(const mmvr::TrackingFrame& tracking) {
         result.view = mmvr::InversePose(lastViewPose);
         result.viewAddress = submittedWorldView ? submittedWorldView : play->view.viewingPtr;
         result.bodyCorrection = mmvr::YawPose(0);
+        result.worldScale = worldScale;
         return result;
     }
     bool cinematic = mmvrgame::InWorldCinematic(play);
@@ -218,8 +227,11 @@ mmvr::CameraFrame Update(const mmvr::TrackingFrame& tracking) {
         // until PlayerDrawEnd records the current scene/form/generation.
         const auto relative = mmvr::Multiply(mmvr::PoseMatrix(tracking.head),
                                              mmvr::InversePose(mmvr::PoseMatrix(tracking.origin)));
+        // No body draw yet: use the character eye and the smoothed main-path scale.
+        const float gapOffset = mmvr::GetSettings().Get(mmvr::Setting::FloorHeightOffset) *
+            (mmvr::FloorPinnedWorldScaleActive(mmvr::GetSettings()) ? worldScale : 1.f);
         auto pose = mmvr::YawPose(Radians(p->actor.shape.rot.y) - mmvr::PoseYaw(relative) + Pi,
-                                  p->actor.world.pos.x, p->actor.world.pos.y + mmvrgame::FormEyeHeight(p),
+                                  p->actor.world.pos.x, p->actor.world.pos.y + mmvrgame::FormEyeHeight(p) + gapOffset,
                                   p->actor.world.pos.z);
         if (owner == p && scene == play->sceneId && activeForm == p->transformation &&
             originGeneration == tracking.originEpoch && lastViewPose.m[3][3]) {
@@ -240,6 +252,8 @@ mmvr::CameraFrame Update(const mmvr::TrackingFrame& tracking) {
         result.view = mmvr::InversePose(pose);
         result.viewAddress = submittedWorldView ? submittedWorldView : play->view.viewingPtr;
         result.bodyCorrection = mmvr::YawPose(0);
+        result.worldScale = worldScale;
+        mmvr::SetActiveWorldScale(worldScale);
         return result;
     }
     if (!mmvr::FirstPersonRequested() || !p || giantTransition ||
@@ -256,6 +270,7 @@ mmvr::CameraFrame Update(const mmvr::TrackingFrame& tracking) {
         mmvrgame::ClearArmRun();
         mmvrgame::ClearTracking();
         mmvrgame::ClearClimbing();
+        mmvr::SetActiveWorldScale(1.f);
         return result;
     }
     const auto relative =
@@ -343,9 +358,21 @@ mmvr::CameraFrame Update(const mmvr::TrackingFrame& tracking) {
     // Zora's swimming pose is horizontal: adding the standing eye height puts
     // the camera far above the actual head. Smooth the model anchor only;
     // physical headset rotation and lean remain unfiltered at XR cadence.
+    bool swam = false;
     if (!cinematic && haveDraw && drawScene == play->sceneId && drawnHeadOwner == p &&
-        drawnHeadForm == p->transformation)
-        targetHeight = MMVR_SwimEyeHeight(p, drawHeadOffset.y, targetHeight);
+        drawnHeadForm == p->transformation) {
+        const float swimHeight = MMVR_SwimEyeHeight(p, drawHeadOffset.y, targetHeight);
+        swam = swimHeight != targetHeight;
+        targetHeight = swimHeight;
+    }
+    // Floor-pinned world scale follows body size through gameplay,
+    // transformations, doors, item gets and cutscenes. Swim/ride/flowers/giant
+    // keep unit scale.
+    const bool scaleActive = mmvr::FloorPinnedWorldScaleActive(mmvr::GetSettings()) && flowerStage == 0 &&
+        !p->rideActor && !swam && !giantTransition;
+    // Scale from the standing skeleton; Goron curls lower the view without growing the world.
+    const float standingEye = mmvrgame::FormStandingEyeHeight(p);
+    const float targetScale = scaleActive ? mmvrgame::FloorPinnedWorldScaleTarget(p, standingEye) : 1.f;
     // A system recenter establishes a fresh headset baseline. Rebase the form
     // height at that same point so an earlier Goron roll/curl height is not
     // retained after the player has returned to standing.
@@ -353,6 +380,21 @@ mmvr::CameraFrame Update(const mmvr::TrackingFrame& tracking) {
         height = targetHeight;
     else
         height += (targetHeight - height) * heightStep;
+    // Snap scale on ownership changes; otherwise ease with height so the floor stays steady.
+    if (systemRecenter || !sameOwner)
+        worldScale = targetScale;
+    else
+        worldScale += (targetScale - worldScale) * heightStep;
+    if (!std::isfinite(worldScale) || worldScale < 0.25f || worldScale > 3.f)
+        worldScale = std::clamp(std::isfinite(worldScale) ? worldScale : 1.f, 0.25f, 3.f);
+    // Eye and scale ease together, keeping eye/(40*scale) — and the floor — steady.
+    const float effScale = scaleActive ? worldScale : 1.f;
+    const float effUnits = Units * effScale;
+    mmvr::SetActiveWorldScale(effScale);
+    // Manual floor calibration. Scaled with the world so the apparent floor
+    // shifts by the same amount at every scale.
+    const float displayHeight =
+        height + mmvr::GetSettings().Get(mmvr::Setting::FloorHeightOffset) * effScale;
     baseYaw += mmvrgame::AdvanceSpinTurn(tracking);
     float bodyBase = baseYaw + tracking.snapYaw;
     float flowerYaw = mmvr::GetSettings().Get(mmvr::Setting::FlowerCameraSpin) > .5f ? flowerCamera.Yaw() : 0.f;
@@ -370,15 +412,15 @@ mmvr::CameraFrame Update(const mmvr::TrackingFrame& tracking) {
         p->meleeWeaponState == PLAYER_MELEE_WEAPON_STATE_0) {
         auto basis = mmvr::YawPose(bodyBase + Pi);
         Vec3f before = p->actor.world.pos, next = before, resolved = before;
-        next.x += Units * (dx * basis.m[0][0] + dz * basis.m[2][0]);
-        next.z += Units * (dx * basis.m[0][2] + dz * basis.m[2][2]);
+        next.x += effUnits * (dx * basis.m[0][0] + dz * basis.m[2][0]);
+        next.z += effUnits * (dx * basis.m[0][2] + dz * basis.m[2][2]);
         if (std::abs(next.x - before.x) + std::abs(next.z - before.z) > .00001f) {
             CollisionPoly* wall = nullptr;
             int bgId = BGCHECK_SCENE;
             BgCheck_EntitySphVsWall3(&play->colCtx, &resolved, &next, &before,
                                      std::max(8.f, float(p->cylinder.dim.radius)), &wall, &bgId, &p->actor, 26.8f);
-            Vec3f headBefore{ before.x, before.y + height, before.z };
-            Vec3f headAfter{ resolved.x, resolved.y + height, resolved.z }, hit;
+            Vec3f headBefore{ before.x, before.y + displayHeight, before.z };
+            Vec3f headAfter{ resolved.x, resolved.y + displayHeight, resolved.z }, hit;
             if (BgCheck_EntityLineTest2(&play->colCtx, &headBefore, &headAfter, &hit, &wall, true, true, true, true,
                                         &bgId, &p->actor))
                 resolved = before;
@@ -407,7 +449,7 @@ mmvr::CameraFrame Update(const mmvr::TrackingFrame& tracking) {
     // Apply physical wall pulls before constructing this frame's view, body and hands.
     // This callback runs at XR cadence; repeated eye/matrix reads are deduplicated.
     auto climbView =
-        mmvr::YawPose(bodyBase + Pi, p->actor.world.pos.x, p->actor.world.pos.y + height, p->actor.world.pos.z);
+        mmvr::YawPose(bodyBase + Pi, p->actor.world.pos.x, p->actor.world.pos.y + displayHeight, p->actor.world.pos.z);
     mmvrgame::UpdateClimbing(tracking, climbView, relative);
     const auto& pos = p->actor.world.pos;
     Vec3f visual{ pos.x + tracking.visualOffset[0], pos.y + tracking.visualOffset[1],
@@ -475,7 +517,7 @@ mmvr::CameraFrame Update(const mmvr::TrackingFrame& tracking) {
     auto facing = mmvr::YawPose(Radians(p->actor.shape.rot.y));
     float headX = visual.x;
     float headZ = visual.z;
-    auto viewPose = mmvr::YawPose(bodyBase + Pi, headX, visual.y + height, headZ);
+    auto viewPose = mmvr::YawPose(bodyBase + Pi, headX, visual.y + displayHeight, headZ);
     // Comfort suppresses animated head rotation and small bob, not the authored
     // position of the head. A standing-height root anchor is wrong for seated
     // Zelda lessons and for cutscene riders whose root is at the horse's back.
@@ -538,8 +580,8 @@ mmvr::CameraFrame Update(const mmvr::TrackingFrame& tracking) {
                 cinematicView.m[3][k] += (viewPose.m[3][k] - cinematicView.m[3][k]) * anchorStep;
         }
         viewPose = cinematicView;
-        float x = (relative.m[3][0] - cinematicHead.m[3][0]) * Units,
-              z = (relative.m[3][2] - cinematicHead.m[3][2]) * Units;
+        float x = (relative.m[3][0] - cinematicHead.m[3][0]) * effUnits,
+              z = (relative.m[3][2] - cinematicHead.m[3][2]) * effUnits;
         // Allow a small lean, but physical stepping cannot escape a locked scene.
         float lean = std::hypot(x, z);
         if (lean > 8.f) {
@@ -566,6 +608,7 @@ mmvr::CameraFrame Update(const mmvr::TrackingFrame& tracking) {
     lastViewPose = viewPose;
     mmvrgame::RecordPhotoHead(play, viewPose, relative);
     result.view = mmvr::InversePose(viewPose);
+    result.worldScale = scaleActive ? worldScale : 1.f;
     result.viewAddress = submittedWorldView ? submittedWorldView : play->view.viewingPtr;
     // Replay existing animated limbs with one current root transform for both eyes.
     result.bodyCorrection = mmvr::Multiply(
@@ -619,7 +662,7 @@ mmvr::CameraFrame Update(const mmvr::TrackingFrame& tracking) {
     mmvrgame::ApplyPhysicalPushHandLock(play, p, result.hands);
     result.heldMask = mmvrgame::HeldMaskPose(itemTracking, viewPose, relative);
     if (rewardDrawValid && rewardDrawFrame == play->gameplayFrames) {
-        Vec3f target{viewPose.m[3][0],viewPose.m[3][1]+relative.m[3][1]*Units+18,viewPose.m[3][2]};
+        Vec3f target{viewPose.m[3][0],viewPose.m[3][1]+relative.m[3][1]*effUnits+18,viewPose.m[3][2]};
         mmvr::Matrix hand;
         const bool offer=MMVR_OfferingItem(p);
         const bool trackedOffer=offer&&mmvrgame::TrackedMaskHand(play,hand,mmvr::SwordController(mmvr::GetSettings()));
@@ -629,7 +672,8 @@ mmvr::CameraFrame Update(const mmvr::TrackingFrame& tracking) {
             // Hold the result in world space while the player looks around.
             if (!rewardViewAnchored || rewardViewOwner != p || rewardViewScene != play->sceneId ||
                 rewardViewItem != p->getItemDrawIdPlusOne) {
-                constexpr float forward = Units * .3048f;
+                constexpr float kForwardMetres = .3048f;
+                const float forward = effUnits * kForwardMetres;
                 target.x += std::sin(heading) * forward;
                 target.z += std::cos(heading) * forward;
                 rewardViewAnchor=target;
@@ -689,6 +733,8 @@ void ResetTestCamera() {
     owner = nullptr;
     submittedWorldView = nullptr;
     lastViewPose = {};
+    worldScale = 1.f;
+    mmvr::SetActiveWorldScale(1.f);
     ClearClimbing();
     ClearTracking();
 }
@@ -708,7 +754,7 @@ extern "C" int MMVR_ItemPresentationPosition(float* position) {
         return false;
     for (int k = 0; k < 3; ++k)
         position[k] = lastViewPose.m[3][k];
-    position[1] += lastHead.m[3][1] * Units + 18;
+    position[1] += lastHead.m[3][1] * Units * mmvr::ActiveWorldScale() + 18;
     return true;
 }
 extern "C" int MMVR_EnvironmentEye(PlayState* play, float* eye) {
@@ -727,7 +773,7 @@ extern "C" int MMVR_EnvironmentEye(PlayState* play, float* eye) {
         if (!wasCinematic || !mmvrgame::InWorldCinematic(play))
             eye[k] += (&delta.x)[k];
     }
-    eye[1] += lastHead.m[3][1] * Units;
+    eye[1] += lastHead.m[3][1] * Units * mmvr::ActiveWorldScale();
     return std::isfinite(eye[0]) && std::isfinite(eye[1]) && std::isfinite(eye[2]);
 }
 extern "C" int MMVR_DisableHitPause() {

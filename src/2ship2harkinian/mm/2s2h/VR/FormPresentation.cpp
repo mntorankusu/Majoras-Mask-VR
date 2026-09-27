@@ -178,7 +178,7 @@ extern "C" int MMVR_GoronEffectMatrix(PlayState*, Player* p) {
     if (!anchor.m[3][3])
         return false;
     Matrix_Put((MtxF*)&anchor);
-    float scale = mmvr::GetSettings().Get(mmvr::Setting::GoronEffectRadius) * 40 / 3575.f;
+    float scale = mmvr::GetSettings().Get(mmvr::Setting::GoronEffectRadius) * mmvr::WorldUnitsPerMetre() / 3575.f;
     Matrix_Translate(0, -5, 0, MTXMODE_APPLY);
     Matrix_RotateYS(0x4000, MTXMODE_APPLY);
     Matrix_Scale(scale, scale, scale, MTXMODE_APPLY);

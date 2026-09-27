@@ -3531,8 +3531,13 @@ bool OverrideProjection(float matrix[4][4]) noexcept {
             fogB = matrix[3][2];
             fogScale = -matrix[2][3];
             const float nearPlane = cameraFrame.active ? 1.f : std::clamp(fogB / (fogA - fogScale), .1f, 1000.f);
+            const float unitsPerMetre = 40.f * (cameraFrame.active && std::isfinite(cameraFrame.worldScale) &&
+                                                        cameraFrame.worldScale > 0.01f
+                                                    ? cameraFrame.worldScale
+                                                    : 1.f);
             const auto projection = EyeProjectionMatrix(
-                currentEye, MagnifiedFov(currentFov, cameraFrame.projectionZoom), currentOrigin, nearPlane);
+                currentEye, MagnifiedFov(currentFov, cameraFrame.projectionZoom), currentOrigin, nearPlane,
+                30000.f, unitsPerMetre);
             if (settings.Get(Setting::HeadsetCulling) > .5f)
                 currentCullingGuard = MakeCullingGuard(MagnifiedFov(currentFov, cameraFrame.projectionZoom),
                                                        settings.Get(Setting::CullingMargin) + cullingTurnMargin);
@@ -3831,7 +3836,11 @@ bool OverrideModelMatrix(const void* address, float matrix[4][4], const float na
     if ((renderPass == 1 || renderPass == 2) && address == skyboxMatrix) {
         Matrix model;
         std::memcpy(&model, matrix, sizeof(model));
-        model = CenterSkybox(model, worldView, currentEye, currentOrigin);
+        const float skyUnits = 40.f * (cameraFrame.active && std::isfinite(cameraFrame.worldScale) &&
+                                               cameraFrame.worldScale > 0.01f
+                                           ? cameraFrame.worldScale
+                                           : 1.f);
+        model = CenterSkybox(model, worldView, currentEye, currentOrigin, skyUnits);
         std::memcpy(matrix, &model, sizeof(model));
         return true;
     }

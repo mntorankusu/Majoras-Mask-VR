@@ -24,7 +24,7 @@ bool BombchuPlacement(PlayState* play, Player* p, const mmvr::Matrix& head, mmvr
         return false;
     x /= xz;
     z /= xz;
-    float reach = mmvr::GetSettings().Get(mmvr::Setting::BombchuPlaceReach) * 40;
+    float reach = mmvr::GetSettings().Get(mmvr::Setting::BombchuPlaceReach) * mmvr::WorldUnitsPerMetre();
     float distance = y < -.05f ? std::clamp((eye.y - p->actor.world.pos.y) * xz / -y, 6.f, reach) : reach;
     Vec3f probe{ p->actor.world.pos.x + x * distance, p->actor.world.pos.y + 20, p->actor.world.pos.z + z * distance };
     CollisionPoly* floor = nullptr;

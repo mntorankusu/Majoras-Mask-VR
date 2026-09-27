@@ -54,13 +54,14 @@ inline bool InverseAffine(const Matrix& a, Matrix& result) {
     result.m[3][3] = 1;
     return true;
 }
-inline Matrix CenterSkybox(Matrix model, const Matrix& worldView, const XrPosef& eye, const XrPosef& origin) {
+inline Matrix CenterSkybox(Matrix model, const Matrix& worldView, const XrPosef& eye, const XrPosef& origin,
+                           float unitsPerMetre = 40.f) {
     auto viewPose = InversePose(worldView);
     auto relative = Multiply(PoseMatrix(eye), InversePose(PoseMatrix(origin)));
     for (int j = 0; j < 3; ++j) {
         model.m[3][j] = viewPose.m[3][j];
         for (int i = 0; i < 3; ++i)
-            model.m[3][j] += relative.m[3][i] * 40.f * viewPose.m[i][j];
+            model.m[3][j] += relative.m[3][i] * unitsPerMetre * viewPose.m[i][j];
     }
     return model;
 }

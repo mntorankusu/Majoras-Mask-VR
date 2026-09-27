@@ -86,25 +86,27 @@ void UpdateBow(const mmvr::TrackingFrame& frame, const mmvr::Matrix& view, const
     }
     auto worldPose = [&](const XrPosef& pose) {
         auto m = mmvr::Multiply(mmvr::PoseMatrix(pose), mmvr::InversePose(mmvr::PoseMatrix(frame.origin)));
-        m.m[3][0] = (m.m[3][0] - relativeHead.m[3][0]) * 40;
-        m.m[3][1] *= 40;
-        m.m[3][2] = (m.m[3][2] - relativeHead.m[3][2]) * 40;
+        const float units = mmvr::WorldUnitsPerMetre();
+        m.m[3][0] = (m.m[3][0] - relativeHead.m[3][0]) * units;
+        m.m[3][1] *= units;
+        m.m[3][2] = (m.m[3][2] - relativeHead.m[3][2]) * units;
         return mmvr::Multiply(m, view);
     };
     auto aim = worldPose(frame.aims[off]);
     auto hand = worldPose(frame.hands[dominant]);
     // Native bow string attaches just behind the authored right-hand grip.
     auto anchor = Point(model, -35, -395, 0), pullHand = Point(hand, 0, 0, 0);
+    const float units = mmvr::WorldUnitsPerMetre();
     Vec3f delta{ anchor.x - pullHand.x, anchor.y - pullHand.y, anchor.z - pullHand.z };
-    float distance = std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z) / 40;
-    float backwards = (-aim.m[2][0] * delta.x - aim.m[2][1] * delta.y - aim.m[2][2] * delta.z) / 40;
+    float distance = std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z) / units;
+    float backwards = (-aim.m[2][0] * delta.x - aim.m[2][1] * delta.y - aim.m[2][2] * delta.z) / units;
     auto head = InteractionHead();
     Vec3f from{ head.x, head.y, head.z }, hit;
     CollisionPoly* poly = nullptr;
     int bg = BGCHECK_SCENE;
     float reach = std::sqrt((anchor.x - head.x) * (anchor.x - head.x) + (anchor.y - head.y) * (anchor.y - head.y) +
                             (anchor.z - head.z) * (anchor.z - head.z)) /
-                  40;
+                  units;
     bool valid =
         reach < settings.Get(mmvr::Setting::AimReach) &&
         !BgCheck_EntityLineTest2(&play->colCtx, &from, &anchor, &hit, &poly, true, true, true, true, &bg, &p->actor);
@@ -113,9 +115,9 @@ void UpdateBow(const mmvr::TrackingFrame& frame, const mmvr::Matrix& view, const
     const bool freeDrawHand = !CarriedObject(p);
     if (!freeDrawHand) { draw.Cancel(); pending=false; }
     bool fire = draw.Update(frame.timeSeconds, frame.epoch, valid && freeDrawHand && hasArrow, frame.triggers[dominant], distance,
-                            std::min(backwards, mmvr::LimitedArrowDraw(100) / 40),
+                            std::min(backwards, mmvr::LimitedArrowDraw(100) / units),
                             settings.Get(mmvr::Setting::BowGrabDistance), settings.Get(mmvr::Setting::BowMinDraw),
-                            std::min(settings.Get(mmvr::Setting::BowFullDraw), mmvr::LimitedArrowDraw(100) / 40));
+                            std::min(settings.Get(mmvr::Setting::BowFullDraw), mmvr::LimitedArrowDraw(100) / units));
     bowModel = model;
     stringHand = pullHand;
     bowPoseValid = valid;
@@ -124,7 +126,7 @@ void UpdateBow(const mmvr::TrackingFrame& frame, const mmvr::Matrix& view, const
         (draw.drawing || fire) && distance > .01f ? XrVector3f{ delta.x, delta.y, delta.z }
                                                   : XrVector3f{ -aim.m[2][0], -aim.m[2][1], -aim.m[2][2] },
         settings.Get(mmvr::Setting::BowAimYaw), settings.Get(mmvr::Setting::BowAimPitch));
-    const float visualDraw = mmvr::LimitedArrowDraw(distance * 40);
+    const float visualDraw = mmvr::LimitedArrowDraw(distance * units);
     if (draw.drawing)
         stringHand = { anchor.x - direction.x * visualDraw, anchor.y - direction.y * visualDraw,
                        anchor.z - direction.z * visualDraw };

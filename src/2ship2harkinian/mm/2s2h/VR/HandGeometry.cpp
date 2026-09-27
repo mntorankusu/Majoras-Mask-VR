@@ -134,9 +134,10 @@ bool PropContact(PlayState* play,Player* player,mmvr::HandPoint point,float radi
 mmvr::HandPoint WorldPosition(const XrPosef& pose, const mmvr::TrackingFrame& frame,
     const mmvr::Matrix& view, const mmvr::Matrix& head) {
     auto m=mmvr::Multiply(mmvr::PoseMatrix(pose),mmvr::InversePose(mmvr::PoseMatrix(frame.origin)));
-    m.m[3][0]=(m.m[3][0]-head.m[3][0])*40;
-    m.m[3][1]*=40;
-    m.m[3][2]=(m.m[3][2]-head.m[3][2])*40;
+    const float units=mmvr::WorldUnitsPerMetre();
+    m.m[3][0]=(m.m[3][0]-head.m[3][0])*units;
+    m.m[3][1]*=units;
+    m.m[3][2]=(m.m[3][2]-head.m[3][2])*units;
     m=mmvr::Multiply(m,view);
     return {m.m[3][0],m.m[3][1],m.m[3][2]};
 }
@@ -170,14 +171,15 @@ mmvr::TrackingFrame ResolveHandGeometry(PlayState* play, Player* player,
         mmvr::HandPoint palm{};
         for(int k=0;k<3;++k)palm[k]=model.m[3][k]+275.f*model.m[1][k]-target[k];
         target=mmvr::HandAdd(target,palm);controller=mmvr::HandAdd(controller,palm);
-        float radius=(player->transformation==PLAYER_FORM_GORON?6.f:3.5f)*mmvr::GetSettings().Get(mmvr::Setting::HandScale);
+        float radius=(player->transformation==PLAYER_FORM_GORON?6.f:3.5f)*mmvr::GetSettings().Get(mmvr::Setting::HandScale)*mmvr::ActiveWorldScale();
         auto query=[&](mmvr::HandPoint point,float r,mmvr::HandContact& hit) {
             return WorldContact(play->colCtx,player,point,r,hit)||PropContact(play,player,point,r,hit);
         };
         auto resolved=hands[h].Update(target,controller,radius,query);
         auto worldDelta=mmvr::HandSub(resolved,target);
         mmvr::HandPoint local{},xrDelta{};
-        for(int c=0;c<3;++c)for(int r=0;r<3;++r)local[c]+=worldDelta[r]*inverse.m[r][c]/40.f;
+        const float worldUnits=mmvr::WorldUnitsPerMetre();
+        for(int c=0;c<3;++c)for(int r=0;r<3;++r)local[c]+=worldDelta[r]*inverse.m[r][c]/worldUnits;
         for(int c=0;c<3;++c)for(int r=0;r<3;++r)xrDelta[c]+=local[r]*origin.m[r][c];
         for(int c=0;c<3;++c) {
             (&output.hands[h].position.x)[c]+=xrDelta[c];

@@ -29,6 +29,8 @@ struct TrackingFrame {
 struct CameraFrame {
     bool active = false, exclusiveView = false;
     float projectionZoom = 1;
+    // World scale override for this frame (1 = unscaled).
+    float worldScale = 1;
     Matrix view{}, bodyCorrection{}, hands[2]{}, handExtras[2]{}, bowString{}, bowArrow{}, itemReticle{}, heldMask{};
     bool handExtraActive[2]{};
     Matrix formFins[2]{}, formEffectAnchor{}, shieldEffectAnchor{}, dekuGuard{}, dekuGuardCorrection{}, dekuBubble{};
@@ -112,12 +114,17 @@ inline Matrix HandCalibration(int hand, const Settings& settings) {
                     settings.Get(Setting(size_t(first) + 2)) * rad);
     const Matrix modelToGrip{ { { 0, 1, 0, 0 }, { 0, 0, -1, 0 }, { -1, 0, 0, 0 }, { 0, 0, 0, 1 } } };
     auto result = Multiply(modelToGrip, trim);
+    // Size the model against the active world scale so hands (and anything
+    // parented to them) keep their configured perceived size while the world
+    // breathes: modelSize/(40*scale) stays constant. Translations below stay
+    // in world units so the grip never detaches from the controller.
+    const float modelSize = .01f * settings.Get(Setting::HandScale) * ActiveWorldScale();
     for (int row = 0; row < 3; ++row)
         for (int col = 0; col < 3; ++col)
-            result.m[row][col] *= .01f * settings.Get(Setting::HandScale);
-    result.m[3][0] = (hand ? 1 : -1) * settings.Get(Setting::HandOffsetX) * 40;
-    result.m[3][1] = settings.Get(Setting::HandOffsetY) * 40;
-    result.m[3][2] = -settings.Get(Setting::HandOffsetZ) * 40;
+            result.m[row][col] *= modelSize;
+    result.m[3][0] = (hand ? 1 : -1) * settings.Get(Setting::HandOffsetX) * WorldUnitsPerMetre();
+    result.m[3][1] = settings.Get(Setting::HandOffsetY) * WorldUnitsPerMetre();
+    result.m[3][2] = -settings.Get(Setting::HandOffsetZ) * WorldUnitsPerMetre();
     return result;
 }
 inline int SwordController(const Settings& s) {
@@ -140,9 +147,10 @@ inline Matrix TrackedHandModel(const TrackingFrame& frame, const Matrix& view, c
     if (!frame.handValid[controller])
         return {};
     auto hand = Multiply(PoseMatrix(frame.hands[controller]), InversePose(PoseMatrix(frame.origin)));
-    hand.m[3][0] = (hand.m[3][0] - relativeHead.m[3][0]) * 40;
-    hand.m[3][1] *= 40;
-    hand.m[3][2] = (hand.m[3][2] - relativeHead.m[3][2]) * 40;
+    const float units = WorldUnitsPerMetre();
+    hand.m[3][0] = (hand.m[3][0] - relativeHead.m[3][0]) * units;
+    hand.m[3][1] *= units;
+    hand.m[3][2] = (hand.m[3][2] - relativeHead.m[3][2]) * units;
     return Multiply(Multiply(ModelHandCalibration(nativeHand, controller, settings), hand), view);
 }
 inline int ItemHandController(int nativeHand, bool hookshot, bool paired, const Settings& settings) {

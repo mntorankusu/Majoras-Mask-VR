@@ -100,7 +100,7 @@ void UpdateFinCombat(const mmvr::TrackingFrame& frame, const mmvr::Matrix& view,
         float sign = axis.x * (-gripWorld.m[2][0]) + axis.y * (-gripWorld.m[2][1]) + axis.z * (-gripWorld.m[2][2]) >= 0
                          ? 1.f
                          : -1.f;
-        float reach = s.Get(mmvr::Setting::FinReach) * 40;
+        float reach = s.Get(mmvr::Setting::FinReach) * mmvr::WorldUnitsPerMetre();
         Vec3f tip{ base.x + axis.x / length * reach * sign, base.y + axis.y / length * reach * sign,
                    base.z + axis.z / length * reach * sign };
         width = { width.x / wlen * 2, width.y / wlen * 2, width.z / wlen * 2 };
@@ -108,7 +108,7 @@ void UpdateFinCombat(const mmvr::TrackingFrame& frame, const mmvr::Matrix& view,
         Vec3f hit, eye{ worldHead.m[3][0], worldHead.m[3][1], worldHead.m[3][2] };
         float distance = std::sqrt(SQ(base.x - eye.x) + SQ(base.y - eye.y) + SQ(base.z - eye.z));
         bool blocked =
-            !std::isfinite(distance) || distance > s.Get(mmvr::Setting::AimReach) * 40 || Wall(play, p, eye, base, hit);
+            !std::isfinite(distance) || distance > s.Get(mmvr::Setting::AimReach) * mmvr::WorldUnitsPerMetre() || Wall(play, p, eye, base, hit);
         if (!blocked && Wall(play, p, base, tip, hit))
             tip = { hit.x + (base.x - hit.x) * .01f, hit.y + (base.y - hit.y) * .01f, hit.z + (base.z - hit.z) * .01f };
         if (!f.samples.empty() &&
@@ -119,8 +119,9 @@ void UpdateFinCombat(const mmvr::TrackingFrame& frame, const mmvr::Matrix& view,
             continue;
         }
         auto local = mmvr::Multiply(mmvr::YawPose(0, unboundedTip.x, unboundedTip.y, unboundedTip.z), invView);
-        mmvr::MotionPoint raw{ now, local.m[3][0] / 40 + head.m[3][0], local.m[3][1] / 40,
-                               local.m[3][2] / 40 + head.m[3][2] };
+        const float worldUnits = mmvr::WorldUnitsPerMetre();
+        mmvr::MotionPoint raw{ now, local.m[3][0] / worldUnits + head.m[3][0], local.m[3][1] / worldUnits,
+                               local.m[3][2] / worldUnits + head.m[3][2] };
         if (!f.samples.empty() &&
             (now < f.samples.back().time || now - f.samples.back().time > .15 ||
              std::hypot(base.x - f.samples.back().base.x, base.z - f.samples.back().base.z) > 20)) {

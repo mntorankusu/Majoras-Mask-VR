@@ -25,4 +25,15 @@ inline float AdjustedEyeHeight(const Settings& settings, Setting id, float model
     const float base = settings.Get(Setting::ModelFormHeight) > .5f && modelHeight > 0 ? modelHeight : nominal;
     return std::max(4.f, base + settings.Get(id) - nominal);
 }
+// Floor-pinned world scale: form eye height over the physical eye height in
+// game units (40 per metre times the configured Player Height). Clamped to a
+// comfortable stereo range.
+inline bool FloorPinnedWorldScaleActive(const Settings& settings) {
+    return settings.Get(Setting::FloorPinnedWorldScale) > .5f;
+}
+inline float WorldScaleForEyes(float formEye, float physicalEyeUnits) {
+    if (!std::isfinite(formEye) || !std::isfinite(physicalEyeUnits) || physicalEyeUnits < 4.f)
+        return 1.f;
+    return std::clamp(formEye / physicalEyeUnits, 0.25f, 3.f);
+}
 } // namespace mmvr

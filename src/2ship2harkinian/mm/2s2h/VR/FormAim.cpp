@@ -123,12 +123,13 @@ void RecordFormTracking(const mmvr::TrackingFrame& f, const mmvr::Matrix& view, 
     form = p->transformation;
     recorded = std::chrono::steady_clock::now();
     auto inverse = mmvr::InversePose(mmvr::PoseMatrix(f.origin));
+    const float units = mmvr::WorldUnitsPerMetre();
     for (int i = 0; i < 3; ++i) {
         valid[i] = i == 2 || (f.handTracked[i] && f.handValid[i]);
         auto local = i == 2 ? head : mmvr::Multiply(mmvr::PoseMatrix(f.hands[i]), inverse);
-        local.m[3][0] = (local.m[3][0] - head.m[3][0]) * 40;
-        local.m[3][1] *= 40;
-        local.m[3][2] = (local.m[3][2] - head.m[3][2]) * 40;
+        local.m[3][0] = (local.m[3][0] - head.m[3][0]) * units;
+        local.m[3][1] *= units;
+        local.m[3][2] = (local.m[3][2] - head.m[3][2]) * units;
         poses[i] = mmvr::Multiply(local, view);
         if (i < 2)
             gripPoses[i] = poses[i];
